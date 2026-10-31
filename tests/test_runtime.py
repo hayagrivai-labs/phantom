@@ -158,7 +158,7 @@ def test_runtime_callback_keyword_selection():
         runtime.register_handler("phantom.pre_execute", callback)
 
     assert runtime.fire_event("phantom.pre_execute", value=42, extra=True) == [
-        "no args", (42, 7), 7, 7, {"value": 42, "extra": True}, 42, 42,
+        "no args", (42, 7), 7, 42, {"value": 42, "extra": True}, 42, 42,
     ]
     assert runtime.get_diagnostics() == []
 
@@ -175,11 +175,23 @@ def test_runtime_callback_invalid_signature_does_not_run(positional_only):
         calls.append(required)
 
     runtime.register_handler("phantom.pre_execute", positional if positional_only else named)
-    kwargs = {"required": 42} if positional_only else {"extra": True}
+    kwargs = {"extra": True}
     assert runtime.fire_event("phantom.pre_execute", **kwargs) == []
     assert calls == []
     assert len(runtime.get_diagnostics()) == 1
     assert runtime.get_diagnostics()[0].severity == Severity.ERROR
+
+
+def test_runtime_positional_only_callback_receives_matching_kwargs():
+    runtime = PhantomRuntime()
+
+    def on_event(host_file, /):
+        return f"Handled: {host_file}"
+
+    runtime.register_handler("phantom.pre_execute", on_event)
+    results = runtime.fire_event("phantom.pre_execute", host_file="app.py")
+    assert results == ["Handled: app.py"]
+    assert runtime.get_diagnostics() == []
 
 
 @pytest.mark.parametrize("signature_error", [TypeError, ValueError])

@@ -345,21 +345,31 @@ class PhantomRuntime:
         except (ValueError, TypeError):
             # Some extension callables have no signature. Call once with the
             # event payload; an exception from the handler must never trigger a retry.
-            accepted = kwargs
-        else:
-            has_var_kw = any(
-                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-            )
-            accepted = kwargs if has_var_kw else {
-                k: v for k, v in kwargs.items()
-                if k in sig.parameters and sig.parameters[k].kind in (
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                    inspect.Parameter.KEYWORD_ONLY,
-                )
-            }
-            sig.bind(**accepted)
+            return fn(**kwargs)
 
-        return fn(**accepted)
+        has_var_kw = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        pos_args: list[Any] = []
+        kw_args: dict[str, Any] = {}
+        for name, param in sig.parameters.items():
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                if name in kwargs:
+                    pos_args.append(kwargs[name])
+            elif param.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            ):
+                if name in kwargs:
+                    kw_args[name] = kwargs[name]
+
+        if has_var_kw:
+            for k, v in kwargs.items():
+                if k not in sig.parameters:
+                    kw_args[k] = v
+
+        bound = sig.bind(*pos_args, **kw_args)
+        return fn(*bound.args, **bound.kwargs)
 
     def fire_event(self, event_name: str, **kwargs: Any) -> list[Any]:
         """Fire a declared event and execute all registered handlers in order.
